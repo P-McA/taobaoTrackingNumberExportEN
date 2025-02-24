@@ -68,7 +68,7 @@ function addCurrentPageOrdersToList() {
 }
 
 function exportOrders() {
-    const header = ["订单号", "下单日期", "商品明细", "商品链接", "单价", "数量", "实付款", "状态", "快递单号"];
+    const header = ["订单号", "商品明细", "商品链接", "单价", "数量", "实付款", "状态", "快递单号"];
 
     toCsv(header, orderList, "淘宝订单导出")
 }
