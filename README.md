@@ -5,3 +5,6 @@
 如果用不了的话
 1. allow pop up on buyertrade.taobao.com
 2. 使用这个 command来打开chrome ./chrome.exe --user-data-dir="C:/Chrome dev session" --disable-web-security 这是windows command, 不同环境可以看 stackoverflow 的这个帖子 https://stackoverflow.com/questions/3102819/disable-same-origin-policy-in-chrome
+
+先点右边这个 再点左边这个
+![01344ba2a279294601a9468ff2132d1](https://github.com/user-attachments/assets/1b6ff757-9176-4d1b-a568-b678788ecf74)
