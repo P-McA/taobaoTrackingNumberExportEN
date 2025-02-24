@@ -40,7 +40,10 @@ if (orderListPage.exec(document.URL)) {
     const orderListMain = document.getElementById("J_bought_main");
     addButton(orderListMain, addCurrentPageOrdersToList, "添加本页订单", "160px");
     addButton(orderListMain, exportOrders, "导出订单", "160px");
+    addButton(orderListMain, stopScript, "stopScript", "160px");
 }
+
+let shouldStop = false;
 
 function toCsv(header, data, filename) {
     let rows = "";
@@ -63,7 +66,7 @@ function toCsv(header, data, filename) {
 let orderList = {}
 
 function addCurrentPageOrdersToList() {
-    const orders = document.getElementsByClassName("js-order-container");
+    const orders = document.querySelectorAll(".js-order-container");
     orderList = processOrders(orders);
 }
 
@@ -73,26 +76,44 @@ function exportOrders() {
     toCsv(header, orderList, "淘宝订单导出")
 }
 
+function stopScript(){
+    shouldStop = true;
+    console.log('正在停止处理...');
+    // 如果有结果，导出当前结果
+    if (orderList && orderList.length > 0) {
+        console.table(orderList);
+        exportOrders();
+    }
+}
+
 let isProcessing = false;
 function processOrders(orders, currentOrderIndex = 0, results = []) {
-    if (currentOrderIndex >= orders.length) {
+    if (currentOrderIndex >= orders.length || shouldStop == true) {
         console.log('所有订单处理完成！');
         console.table(results);
         return results;
     }
 
-    const order = orders[currentOrderIndex];
-    const id = order.getAttribute('data-reactid').match(/order-(\d+)/)?.[1];
-    console.log(`处理订单 ${id}，第 ${currentOrderIndex + 1}/${orders.length} 个订单`);
+    try{
+        const order = orders[currentOrderIndex];
+        const id = order.getAttribute('data-reactid').match(/order-(\d+)/)?.[1];
+        console.log(`处理订单 ${id}，第 ${currentOrderIndex + 1}/${orders.length} 个订单`);
 
-    // 处理单个订单中的商品
-    processOrderItems(order, id, 0, [], (orderResults) => {
-        console.log("push");
-        results.push(...orderResults);
+        // 处理单个订单中的商品
+        processOrderItems(order, id, 0, [], (orderResults) => {
+            console.log("push");
+            results.push(...orderResults);
+            setTimeout(() => {
+                processOrders(orders, currentOrderIndex + 1, results);
+            }, 500);
+        });
+    }catch(error){
+        console.error(`当前订单结果处理失败:`, error);
+        // 继续处理下一个订单
         setTimeout(() => {
             processOrders(orders, currentOrderIndex + 1, results);
         }, 500);
-    });
+    }
 }
 
 function processOrderItems(order, id, index, itemResults, callback) {
@@ -110,17 +131,17 @@ function processOrderItems(order, id, index, itemResults, callback) {
         let countQuery = order.querySelector("p[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$2.0.0']");
         let actualPayQuery = order.querySelector("span[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$4.0.0.2.0.1']");
         let itemUrlQuery = order.querySelector("a[href]");
-
+        let itemUrl = itemUrlQuery.href;
+        let price = priceQuery.textContent;
+        let count = countQuery.textContent;
         if (index === 0) {
             let statusQuery = order.querySelector("span[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$5.0.0.0']");
             var status = statusQuery.textContent;
         }
-        let itemUrl = itemUrlQuery.href
-        let price = priceQuery.textContent;
-        let count = countQuery.textContent;
         if (actualPayQuery != null) {
             var actualPay = actualPayQuery.textContent;
         }
+
         outputData = [
             id,
             productQuery.textContent.replace(/,/g,"，"),
@@ -132,14 +153,12 @@ function processOrderItems(order, id, index, itemResults, callback) {
         ]
 
     }catch(error) {
-        console.log(error)
+        console.log(error);
     }
-
 
     let trackingNumber = 0;
     let itemTrackingQuery = order.querySelector('#viewLogistic');
     if (itemTrackingQuery) {
-
         const logisticsUrl = itemTrackingQuery.href;
         if (logisticsUrl) {
             // 存储原始窗口引用
