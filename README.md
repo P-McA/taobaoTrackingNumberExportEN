@@ -10,3 +10,4 @@
 3. 设置chrome pop up: Allow pop up on buyertrade.taobao.com
 4. 先添加订单，才能导出。每页大概是50个订单左右，超出需要手动翻页 
 
+https://greasyfork.org/en/scripts/528003-taobao-orders-export-%E6%B7%98%E5%AE%9D%E8%AE%A2%E5%8D%95%E5%BF%AB%E9%80%92%E5%AF%BC%E5%87%BA
