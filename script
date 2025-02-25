@@ -14,6 +14,23 @@
 // ==/UserScript==
 
 
+//TODO: add retry for failed tracking number.
+
+//**********************************global variables****************************************
+let orderList = [];
+let isProcessing = false;
+let shouldStop = false;
+let currentWindow = null;
+const state = {
+    orderList: [],
+    isProcessing: false,
+    shouldStop: false,
+    currentWindow: null
+};
+const orderListPage = /(http|https):\/\/buyertrade\.taobao.*?\/trade/g;
+//******************************************************************************************
+
+
 function addButton(element, onclickFunc, value = "按钮", width = "60px", height = "60px") {
     const button = document.createElement("input");
     button.type = "button";
@@ -35,26 +52,20 @@ function addButton(element, onclickFunc, value = "按钮", width = "60px", heigh
     element.insertBefore(button, element.childNodes[0]);
 }
 
-const orderListPage = /(http|https):\/\/buyertrade\.taobao.*?\/trade/g;
+
 if (orderListPage.exec(document.URL)) {
     const orderListMain = document.getElementById("J_bought_main");
     addButton(orderListMain, addCurrentPageOrdersToList, "添加本页订单", "160px");
     addButton(orderListMain, exportOrders, "导出订单", "160px");
-    addButton(orderListMain, stopScript, "stopScript", "160px");
+    addButton(orderListMain, stopScript, "停止脚本", "160px");
 }
 
-let shouldStop = false;
-
 function toCsv(header, data, filename) {
-    let rows = "";
-    let row = header.join(",");
-    rows += row + "\n";
-
-    _.forEach(data, value => {
-        rows += _.replace(value.join(","), '#', '@') + "\n";
-    })
-
-    let blob = new Blob(["\ufeff" +rows],{type: 'text/csv;charset=utf-8;'});
+    let rows = '\uFEFF订单号,商品名称,店铺链接,价格,数量,实付款,状态,运单号\n'
+    for(let order of data) {
+        rows += order.join(',') + '\n';
+    }
+    let blob = new Blob([rows], {type: 'text/csv;charset=utf-8;'});
     let encodedUrl = URL.createObjectURL(blob);
     let url = document.createElement("a");
     url.setAttribute("href", encodedUrl);
@@ -63,32 +74,49 @@ function toCsv(header, data, filename) {
     url.click();
 }
 
-let orderList = {}
-
+//*************************************************Buttons functions****************************************************
 function addCurrentPageOrdersToList() {
+    if (state.isProcessing) {
+        console.log('已有处理进行中，请等待...');
+        return;
+    }
+
+    state.isProcessing = true;
+    state.shouldStop = false;
     const orders = document.querySelectorAll(".js-order-container");
-    orderList = processOrders(orders);
+    processOrders(orders);
 }
 
 function exportOrders() {
     const header = ["订单号", "商品明细", "商品链接", "单价", "数量", "实付款", "状态", "快递单号"];
-
     toCsv(header, orderList, "淘宝订单导出")
 }
 
-function stopScript(){
-    shouldStop = true;
+function stopScript() {
+    state.shouldStop = true;
     console.log('正在停止处理...');
-    // 如果有结果，导出当前结果
-    if (orderList && orderList.length > 0) {
-        console.table(orderList);
+    if (state.currentWindow && !state.currentWindow.closed) {
+        state.currentWindow.close();
+    }
+    if (state.orderList.length > 0) {
         exportOrders();
     }
+    state.isProcessing = false;
+    let statusDiv = document.getElementById('processing-status');
+    if (statusDiv) {
+        statusDiv.textContent = '处理已停止';
+        statusDiv.style.background = '#F56C6C';
+        // 2秒后移除状态显示
+        setTimeout(() => {
+            statusDiv.remove();
+        }, 2000);
+    }
 }
+//*************************************************Buttons functions****************************************************
 
-let isProcessing = false;
+
 function processOrders(orders, currentOrderIndex = 0, results = []) {
-    if (currentOrderIndex >= orders.length || shouldStop == true) {
+    if (currentOrderIndex >= orders.length || state.shouldStop) {
         console.log('所有订单处理完成！');
         console.table(results);
         return results;
@@ -101,8 +129,7 @@ function processOrders(orders, currentOrderIndex = 0, results = []) {
 
         // 处理单个订单中的商品
         processOrderItems(order, id, 0, [], (orderResults) => {
-            console.log("push");
-            results.push(...orderResults);
+            orderList.push(orderResults);
             setTimeout(() => {
                 processOrders(orders, currentOrderIndex + 1, results);
             }, 500);
@@ -117,83 +144,90 @@ function processOrders(orders, currentOrderIndex = 0, results = []) {
 }
 
 function processOrderItems(order, id, index, itemResults, callback) {
-    let outputData = {}
     try{
         let productQuery = order.querySelector("span[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$0.0.1.0.0.1']");
-        if (productQuery === null) {
+        if (productQuery == null) {
             callback(itemResults);
             return;
         }
-        let textContent = order.textContent;
-        let pattern = /(\d{4}-\d{2}-\d{2})订单号: ()/;
-        let isExist = pattern.exec(textContent);
-        let priceQuery = order.querySelector("span[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$1.0.1.1']");
-        let countQuery = order.querySelector("p[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$2.0.0']");
-        let actualPayQuery = order.querySelector("span[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$4.0.0.2.0.1']");
-        let itemUrlQuery = order.querySelector("a[href]");
-        let itemUrl = itemUrlQuery.href;
-        let price = priceQuery.textContent;
-        let count = countQuery.textContent;
-        if (index === 0) {
-            let statusQuery = order.querySelector("span[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$5.0.0.0']");
-            var status = statusQuery.textContent;
-        }
-        if (actualPayQuery != null) {
-            var actualPay = actualPayQuery.textContent;
-        }
+        const queries = {
+            product: order.querySelector("span[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$0.0.1.0.0.1']"),
+            price: order.querySelector("span[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$1.0.1.1']"),
+            count: order.querySelector("p[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$2.0.0']"),
+            actualPay: order.querySelector("span[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$4.0.0.2.0.1']"),
+            itemUrl: order.querySelector("a[href]"),
+            status: index === 0 ? order.querySelector("span[data-reactid='.0.7:$order-" + id + ".$" + id + ".0.1:1:0.$" + index + ".$5.0.0.0']") : null,
+            tracking: index === 0 ? order.querySelector('#viewLogistic') : null
+        };
 
-        outputData = [
+        if (!queries.product || !queries.price || !queries.count) {
+            throw new Error(`订单 ${id} 缺少名称`);
+        }
+        const orderItem = [
             id,
-            productQuery.textContent.replace(/,/g,"，"),
-            itemUrl,
-            parseFloat(price),
-            count,
-            actualPay,
-            status
-        ]
+            queries.product.textContent.replace(/,/g, "，"),
+            queries.itemUrl.href,
+            parseFloat(queries.price.textContent),
+            queries.count.textContent,
+            queries.actualPay?.textContent || '',
+            queries.status?.textContent || ''
+        ];
 
-    }catch(error) {
-        console.log(error);
-    }
+        if (index === 0 && queries.tracking) {
+            const logisticsUrl = queries.tracking.href;
 
-    let trackingNumber = 0;
-    let itemTrackingQuery = order.querySelector('#viewLogistic');
-    if (itemTrackingQuery) {
-        const logisticsUrl = itemTrackingQuery.href;
-        if (logisticsUrl) {
-            // 存储原始窗口引用
-            const originalWindow = window;
-            let currentWindow = window.open(logisticsUrl);
-            // 点击按钮打开新窗口
-            setTimeout(() => {
-                try {
-                    if (currentWindow && !currentWindow.closed) {
-                        // 获取快递单号
-                        const parentElement = currentWindow.document.querySelector('.rax-view-v2.flexRow.pc-company-wrapper');
-                        const childElement = parentElement.querySelector('.rax-view-v2.flexRow');
-                        const trackingNumberElement = childElement.querySelectorAll('.rax-text-v2.desc')[1];
-                        trackingNumber = trackingNumberElement.textContent;
-                        console.log("traking info ", trackingNumber)
+            // 使用异步函数获取快递单号
+            getTrackingNumber(logisticsUrl).then(trackingNumber => {
+                orderItem.push(trackingNumber);
+                itemResults = orderItem;
 
-                        // 关闭窗口
-                        currentWindow.close();
-                    }
-
-                } catch (error) {
-                    console.error('获取物流信息失败:', error, " id: ", id);
-                    // 确保窗口关闭
-                    currentWindow.close();
-
-                }
-                outputData.push(trackingNumber)
-                itemResults.push(outputData);
-                console.log("processing next ", order, id)
+                // 递归处理下一个商品
                 processOrderItems(order, id, index + 1, itemResults, callback);
-            }, 2000)
+            });
+        } else {
+            // 没有物流信息或不是第一个商品，直接添加默认值并返回
+            orderItem.push('0');
+            itemResults = orderItem;
+            callback(itemResults);
         }
-    } else {
-        console.log("no tracking");
+    } catch (error) {
         // 直接处理下一个商品
-        processOrderItems(order, id, index + 1, itemResults, callback);
+        console.error(`处理订单 ${id} 时出错:`, error);
+        callback(itemResults?itemResults:[]);
     }
 }
+
+
+async function getTrackingNumber(logisticsUrl) {
+    return new Promise((resolve) => {
+        if (state.shouldStop) {
+            resolve('0');
+            return;
+        }
+        const currentWindow = window.open(logisticsUrl);
+        setTimeout(() => {
+            try {
+                if (currentWindow && !currentWindow.closed) {
+                    const trackingNumber = currentWindow.document
+                        .querySelector('.rax-view-v2.flexRow.pc-company-wrapper')
+                        ?.querySelector('.rax-view-v2.flexRow')
+                        ?.querySelectorAll('.rax-text-v2.desc')?.[1]
+                        ?.textContent || '0';
+
+                    currentWindow.close();
+                    resolve(trackingNumber);
+                } else {
+                    resolve('0');
+                }
+            } catch (error) {
+                console.error('获取物流信息失败:', error);
+                if (currentWindow) currentWindow.close();
+                resolve('0');
+            } finally {
+                state.currentWindow = null;
+                resolve('0');
+            }
+        }, 2000);
+    });
+}
+
