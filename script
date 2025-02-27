@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Taobao orders export 淘宝订单快递导出
 // @namespace    http://tampermonkey.net/
-// @version      0.0.1
+// @version      0.0.2
 // @description  Based on 淘宝买家订单导出 by CMA, added tracking number on top of it to the export data. Instructions are listed on GitHub
 // @author       Trizzy33
 // @include      https://buyertrade.taobao*
@@ -185,7 +185,7 @@ function processOrderItems(order, id, index, itemResults, callback) {
         } else {
             // 没有物流信息或不是第一个商品，直接添加默认值并返回
             orderItem.push('0');
-            itemResults = orderItem;
+            itemResults.push(orderItem);
             callback(itemResults);
         }
     } catch (error) {
