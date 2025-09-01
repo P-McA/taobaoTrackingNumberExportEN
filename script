@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Taobao orders export 淘宝订单快递导出
 // @namespace    http://tampermonkey.net/
-// @version      0.1.0
-// @description  Based on 淘宝买家订单导出 by CMA, added tracking number on top of it to the export data. Instructions are listed on GitHub
+// @version      0.2.0
+// @description  Based on 淘宝买家订单导出 by CMA, added tracking number and shipping company to the export data. Instructions are listed on GitHub
 // @author       Trizzy33
 // @include      https://buyertrade.taobao*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.15/lodash.min.js
@@ -80,8 +80,8 @@ function addCurrentPageOrdersToList() {
 }
 
 function exportOrders() {
-    const header = ["订单号", "商品名称", "商品链接", "单价", "数量", "实付款", "状态", "快递单号"];
-    toCsv(header, orderList, "淘宝订单导出");
+    const header = ["Order Number", "Product Name", "Product Link", "Unit Price", "Quantity", "Payment", "Status", "Tracking", "Shipping Company"];
+    toCsv(header, orderList, "Taobao Order Export");
 }
 
 function stopScript() {
@@ -144,12 +144,14 @@ function processOrderItems(order, id, index = 0, productNames = [], callback) {
             ];
 
             if (queries.tracking) {
-                getTrackingNumberViaHover(queries.tracking).then(trackingNumber => {
-                    orderItem.push(trackingNumber);
+                getTrackingInfoViaHover(queries.tracking).then(trackingInfo => {
+                    orderItem.push(trackingInfo.trackingNumber);
+                    orderItem.push(trackingInfo.shippingCompany);
                     callback(orderItem);
                 });
             } else {
                 orderItem.push('0');
+                orderItem.push('');
                 callback(orderItem);
             }
 
@@ -165,28 +167,56 @@ function processOrderItems(order, id, index = 0, productNames = [], callback) {
     }
 }
 
-async function getTrackingNumberViaHover(el) {
+async function getTrackingInfoViaHover(el) {
     return new Promise((resolve) => {
-        if (state.shouldStop) return resolve('0');
+        if (state.shouldStop) return resolve({ trackingNumber: '0', shippingCompany: '' });
+
         ['mouseenter', 'mouseover'].forEach(e => el.dispatchEvent(new MouseEvent(e, { bubbles: true })));
-        const observer = new MutationObserver((mutations, obs) => {
+
+        let trackingNumber = '0';
+        let shippingCompany = '';
+
+        const observer = new MutationObserver(async (mutations, obs) => {
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
+                    if (!node.querySelector) continue;
+
                     const tooltip = node.querySelector?.('.logistics-info-mod__header___gNRGw');
                     if (tooltip) {
-                        const match = tooltip.textContent.match(/\d{13,}/);
-                        if (match) {
-                            obs.disconnect();
-                            return resolve(match[0]);
+                        // Extract tracking number
+                        const trackingMatch = tooltip.textContent.match(/\d{13,}/);
+                        if (trackingMatch) {
+                            trackingNumber = trackingMatch[0];
                         }
+
+                        // Extract domestic shipping company with delay added to allow for Chrome translation
+                        const companyElement = tooltip.querySelector?.('span[data-reactid*=".3.1.0.$content.0.0.0"]') ||
+                                               tooltip.querySelector?.('span:first-child');
+                        if (companyElement) {
+                            await new Promise(wait => setTimeout(wait, 800));
+                            let companyText = companyElement.textContent || '';
+                            const fontElement = companyElement.querySelector('font[style*="vertical-align"]');
+                            if (fontElement && fontElement.textContent) {
+                                companyText = fontElement.textContent;
+                            }
+                            if (trackingNumber !== '0') {
+                                companyText = companyText.replace(trackingNumber, '').trim();
+                            }
+                            shippingCompany = companyText;
+                        }
+
+                        obs.disconnect();
+                        return resolve({ trackingNumber, shippingCompany });
                     }
                 }
             }
         });
+
         observer.observe(document.body, { childList: true, subtree: true });
+
         setTimeout(() => {
             observer.disconnect();
-            resolve('0');
-        }, 4000);
+            resolve({ trackingNumber, shippingCompany });
+        }, 5000);
     });
 }
